@@ -57,6 +57,13 @@ const loadReleaser = async (target) => {
     target: 'node20',
     outfile,
     logLevel: 'error',
+    // 依赖里 undici 是 CJS，打进 ESM 后它内部的 require 会变成 esbuild 的 __require
+    // 兜底，那个兜底在没有真 require 的环境下直接抛
+    // `Dynamic require of "node:assert" is not supported`。注入一个真 require 即可；
+    // undici 动态 require 的都是 node 内置模块，所以按临时目录解析也没问题。
+    banner: {
+      js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+    },
   });
   const mod = await import(pathToFileURL(outfile).href);
   rmSync(dir, { recursive: true, force: true });
