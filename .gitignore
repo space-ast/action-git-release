@@ -1,0 +1,11 @@
+# actions requires a bundled dist/ to be committed
+# but its recommended not to check node_modules in
+# https://github.com/actions/toolkit/blob/master/docs/action-versioning.md#recommendations
+node_modules
+coverage
+lib
+*.tsbuildinfo
+.DS_Store
+
+# 编辑器/工具的个人配置，不应共享
+.claude/settings.local.json

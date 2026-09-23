@@ -1,0 +1,92 @@
+# https://help.github.com/en/articles/metadata-syntax-for-github-actions
+# 输入输出与 softprops/action-gh-release 保持同名同义，只额外增加 platform / api_url 两项，
+# 使既有的 workflow 几乎不用改动就能把发布目标切到 Gitee 或 GitCode。
+name: "Git Release"
+description: "在 GitHub Actions 上把 release 发布到 Gitee、GitCode 或 GitHub"
+author: "action-git-release"
+inputs:
+  platform:
+    description: "目标平台：gitee | gitcode | github | auto。auto 会依次按 api_url、平台专属 token 环境变量、GitHub Actions 运行环境来推断。默认 auto"
+    required: false
+    default: "auto"
+  api_url:
+    description: "覆盖平台 API 的根地址，例如自建的 Gitea 或 GitHub 企业版"
+    required: false
+  body:
+    description: "Release 正文，用于说明本次变更"
+    required: false
+  body_path:
+    description: "从文件读取 Release 正文。文件读不到时回退到 body 输入"
+    required: false
+  name:
+    description: "Release 名称，默认使用 tag 名"
+    required: false
+  tag_name:
+    description: "Tag 名称，默认为 github.ref_name。refs/tags/<name> 会被归一化成 <name>"
+    required: false
+  draft:
+    description: "保留为草稿。默认 false。注意：Gitee 与 GitCode 没有草稿态，置为 true 时只会打印告警并立即发布"
+    required: false
+  prerelease:
+    description: "标记为预发布版本。默认 false。在 GitCode 上会映射为 release_status=pre"
+    required: false
+  preserve_order:
+    description: "按给定顺序串行上传附件。默认并行上传"
+    required: false
+  files:
+    description: "待上传附件的路径 glob，多个用换行分隔。glob 元字符需转义。`~/...` 会展开为 runner 的 home 目录。Windows 下 \\ 与 / 都可作为分隔符"
+    required: false
+  working_directory:
+    description: "解析 files glob 时使用的基准目录，默认为工作区根目录"
+    required: false
+  overwrite_files:
+    description: "同名附件是否覆盖。默认 true"
+    required: false
+    default: "true"
+  fail_on_unmatched_files:
+    description: "任一 files glob 没有匹配到文件时是否失败。默认 false"
+    required: false
+  repository:
+    description: "目标仓库，格式为 <owner>/<repo>。默认为 GITHUB_REPOSITORY，若目标平台仓库路径不同请显式指定"
+    required: false
+  token:
+    description: "访问目标平台的令牌。留空时按平台回退到 GITEE_TOKEN / GITCODE_TOKEN / GITHUB_TOKEN。不要在此设置默认值，否则环境变量回退将失效"
+    required: false
+  target_commitish:
+    description: "决定 tag 从哪个提交创建的 commitish，可以是分支名或 commit SHA"
+    required: false
+  discussion_category_name:
+    description: "为 release 关联一个 discussion 分类。仅 GitHub 支持，其余平台会打印告警后忽略"
+    required: false
+  generate_release_notes:
+    description: "自动生成 release notes。仅 GitHub 支持，其余平台会打印告警后忽略"
+    required: false
+  previous_tag:
+    description: "生成 release notes 时的对比基准 tag。仅在 generate_release_notes 启用且平台支持时有效"
+    required: false
+    default: ""
+  append_body:
+    description: "追加正文而不是覆盖已有正文。默认 false"
+    required: false
+  make_latest:
+    description: "是否将该 release 设为仓库最新版本，可取 true | false | legacy。GitHub 与 GitCode 支持，Gitee 会打印告警后忽略"
+    required: false
+env:
+  GITHUB_TOKEN: "由 GitHub Actions 提供，platform=github 时的 token 兜底"
+  GITEE_TOKEN: "platform=gitee 时的 token 兜底，也是 platform=auto 的推断依据之一"
+  GITCODE_TOKEN: "platform=gitcode 时的 token 兜底，也是 platform=auto 的推断依据之一"
+outputs:
+  url:
+    description: "Release 页面的 HTML 地址"
+  id:
+    description: "Release ID。GitCode 以 tag 作标识，此处即 tag"
+  upload_url:
+    description: "上传附件用的地址。Gitee 没有该概念，此处为空字符串"
+  assets:
+    description: "本次上传/覆盖的附件信息，JSON 数组，元素形如 {id, name, size, browser_download_url}"
+runs:
+  using: "node24"
+  main: "dist/index.js"
+branding:
+  color: "green"
+  icon: "package"

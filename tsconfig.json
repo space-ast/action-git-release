@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "useUnknownInCatchVariables": true,
+    "target": "es2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["es2022", "dom"],
+    "outDir": "./lib",
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "__tests__"],
+  "exclude": ["node_modules", "dist", "scripts", "vitest.config.mts"]
+}

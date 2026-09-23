@@ -1,0 +1,12 @@
+# 统一换行符，保证跨平台检出结果一致。
+#
+# 这直接关系到 CI 里那道 `npm run build && git diff --exit-code dist/` 检查：
+# esbuild 产出的是 LF，如果检出时被转成 CRLF，Windows 上就会看到「产物与源码不一致」的假失败。
+* text=auto eol=lf
+
+# 二进制文件不做任何转换
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary

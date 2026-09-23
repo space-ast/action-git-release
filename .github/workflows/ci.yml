@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 格式检查
+        run: npm run fmtcheck
+
+      - name: 单元测试
+        run: npm test
+
+      # dist/index.js 必须提交进仓库（GitHub 直接跑它，不会现场构建）。
+      # 一旦有人改了 src 却忘了重新构建，这里就会失败。
+      - name: 校验 dist 与源码一致
+        run: |
+          npm run build
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/index.js 与 src 不一致。请在本地运行 npm run build 并提交产物。"
+            git diff --stat -- dist/
+            exit 1
+          fi
+
+  # 只读真机校验：用公开仓库的真实响应跑 provider 的归一化逻辑，
+  # 确保单测里的 fixture 没有和平台实际行为脱节。不做任何写操作。
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Gitee 只读冒烟
+        run: npm run smoke:gitee
+
+      - name: GitCode 只读冒烟
+        # GitCode 匿名访问返回 403，没有配 secret 时跳过而不是失败
+        if: ${{ secrets.GITCODE_TOKEN != '' }}
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+        run: npm run smoke:gitcode

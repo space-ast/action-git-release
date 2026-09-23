@@ -1,0 +1,137 @@
+# 真机端到端联调。这些用例会**真的在目标仓库里创建 release 和附件**，
+# 所以只能手动触发，并且请把 secrets 指向一个专用的测试仓库。
+#
+# 需要的 secrets：
+#   E2E_GITEE_TOKEN    —— Gitee 私人令牌（需要 projects 权限）
+#   E2E_GITCODE_TOKEN  —— GitCode 访问令牌
+#   E2E_REPOSITORY     —— <owner>/<repo>，两个平台上路径一致的测试仓库
+#
+# 运行两次可以得到完整的覆盖：
+#   第一次 —— 走「创建 release + 上传附件」分支
+#   第二次 —— 走「更新 release + 覆盖同名附件」分支，且不会产生重复附件
+name: E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 要联调的平台
+        required: true
+        default: gitee
+        type: choice
+        options:
+          - gitee
+          - gitcode
+      tag:
+        description: 测试用 tag（会在测试仓库里真实创建）
+        required: true
+        default: e2e-test-v1
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: 准备测试构件
+        run: |
+          mkdir -p e2e-assets
+          echo "run ${{ github.run_id }} attempt ${{ github.run_attempt }}" > e2e-assets/artifact.txt
+          # 文件名带空格，用来验证覆盖写时的同名匹配逻辑
+          echo "spaced" > "e2e-assets/with space.txt"
+
+      # ── 第一次：创建 release、上传附件 ───────────────────────────────
+      - name: 发布（首次运行会创建 release）
+        id: release
+        uses: ./
+        with:
+          platform: ${{ inputs.platform }}
+          repository: ${{ secrets.E2E_REPOSITORY }}
+          token: ${{ inputs.platform == 'gitee' && secrets.E2E_GITEE_TOKEN || secrets.E2E_GITCODE_TOKEN }}
+          tag_name: ${{ inputs.tag }}
+          name: E2E ${{ inputs.tag }}
+          body: 由 e2e.yml 自动创建
+          files: e2e-assets/*.txt
+          fail_on_unmatched_files: 'true'
+
+      - name: 断言输出
+        env:
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+          RELEASE_ASSETS: ${{ steps.release.outputs.assets }}
+        run: |
+          echo "url=$RELEASE_URL id=$RELEASE_ID"
+          echo "$RELEASE_ASSETS"
+          [ -n "$RELEASE_URL" ] || { echo "::error::url 输出为空"; exit 1; }
+          [ -n "$RELEASE_ID" ] || { echo "::error::id 输出为空"; exit 1; }
+          printf '%s' "$RELEASE_ASSETS" | node -e "
+            let s=''; process.stdin.on('data',d=>s+=d).on('end',()=>{
+              const assets = JSON.parse(s);
+              const names = assets.map(a => a.name).sort();
+              console.log('assets =', names.join(', '));
+              if (assets.length !== 2) { console.error('::error::期望 2 个附件，实际 ' + assets.length); process.exit(1); }
+              if (!assets.every(a => a.browser_download_url)) { console.error('::error::附件缺少 download url'); process.exit(1); }
+            });
+          "
+
+      # ── 第二次：重跑同一个 tag，应走更新 + 覆盖，且附件不重复 ────────
+      - name: 重复发布（验证更新与覆盖写）
+        id: rerun
+        uses: ./
+        with:
+          platform: ${{ inputs.platform }}
+          repository: ${{ secrets.E2E_REPOSITORY }}
+          token: ${{ inputs.platform == 'gitee' && secrets.E2E_GITEE_TOKEN || secrets.E2E_GITCODE_TOKEN }}
+          tag_name: ${{ inputs.tag }}
+          name: E2E ${{ inputs.tag }}
+          body: 由 e2e.yml 自动创建（第二次）
+          files: e2e-assets/*.txt
+          fail_on_unmatched_files: 'true'
+
+      - name: 断言覆盖写没有产生重复附件
+        env:
+          FIRST: ${{ steps.release.outputs.assets }}
+          SECOND: ${{ steps.rerun.outputs.assets }}
+        run: |
+          node -e "
+            const first = JSON.parse(process.env.FIRST ?? '[]');
+            const second = JSON.parse(process.env.SECOND ?? '[]');
+            const firstIds = first.map(a => a.id).sort().join(',');
+            const secondIds = second.map(a => a.id).sort().join(',');
+            console.log('first  =', firstIds);
+            console.log('second =', secondIds);
+            // 覆盖写会删掉旧附件再传新的，因此 id 必然变化；关键是数量不能翻倍
+            if (second.length !== first.length) {
+              console.error('::error::第二次上传后附件数量变了，覆盖写可能失效');
+              process.exit(1);
+            }
+          "
+
+      # ── draft 降级：只告警，仍然发布成功 ──────────────────────────────
+      - name: draft:true 应降级为立即发布
+        id: draft
+        uses: ./
+        with:
+          platform: ${{ inputs.platform }}
+          repository: ${{ secrets.E2E_REPOSITORY }}
+          token: ${{ inputs.platform == 'gitee' && secrets.E2E_GITEE_TOKEN || secrets.E2E_GITCODE_TOKEN }}
+          tag_name: ${{ inputs.tag }}-draft
+          draft: 'true'
+          body: draft 降级用例
+
+      - name: 断言 draft 用例仍然产出了可访问的 release
+        env:
+          DRAFT_URL: ${{ steps.draft.outputs.url }}
+        run: |
+          [ -n "$DRAFT_URL" ] || { echo "::error::draft 用例没有产出 url"; exit 1; }
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -L "$DRAFT_URL")
+          echo "$DRAFT_URL -> $code"
+          [ "$code" = "200" ] || { echo "::error::draft 降级后 release 页面不可访问"; exit 1; }
