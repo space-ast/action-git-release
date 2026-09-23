@@ -64,6 +64,9 @@ export class GiteeReleaser implements Releaser {
     discussions: false,
   };
 
+  /** 默认分支的缓存，按实例复用（一个实例只服务一个仓库）。 */
+  private defaultBranchCache?: string;
+
   constructor(
     private readonly apiBase: string,
     readonly webBaseUrl: string,
@@ -137,9 +140,32 @@ export class GiteeReleaser implements Releaser {
       // 创建可能已经成功但响应丢失，重试有产生重复 release 的风险，
       // 交由 run.ts 在冲突时回退到「查找后更新」。
       maxAttempts: 1,
-      body: JSON.stringify(this.createBody(params)),
+      body: JSON.stringify(await this.createBody(params)),
     });
     return this.toRelease(raw, params);
+  }
+
+  /**
+   * 取仓库的默认分支。
+   *
+   * Gitee 的文档把 `target_commitish` 描述成「默认是当前默认分支」，但实测**它是必填的**——
+   * 不传会直接返回 400 `target_commitish is missing`。所以这里必须自己把默认分支查出来补上。
+   * 结果按仓库缓存，避免每个 release 都多打一次接口。
+   */
+  private async defaultBranch({ owner, repo }: RepositoryRef): Promise<string> {
+    if (this.defaultBranchCache) {
+      return this.defaultBranchCache;
+    }
+    const raw = await requestJson<{ default_branch?: string }>({
+      method: 'GET',
+      url: this.url(this.repoPath({ owner, repo })),
+      platform: this.platform,
+      // 查不到不代表不能用——令牌可能只有写 release 的权限。降级到兜底分支，
+      // 真正的权限问题交给紧随其后的创建请求去报错，那里的信息更准确。
+      allowStatuses: [404],
+    });
+    this.defaultBranchCache = raw?.default_branch || 'master';
+    return this.defaultBranchCache;
   }
 
   /**
@@ -263,18 +289,17 @@ export class GiteeReleaser implements Releaser {
    * Gitee 只在创建时接受这几个字段，`draft`/`make_latest` 等平台不支持的能力
    * 由 run.ts 提前告警，这里不做处理。
    */
-  private createBody(params: ReleaseMutation): Record<string, unknown> {
+  private async createBody(params: ReleaseMutation): Promise<Record<string, unknown>> {
     const body: Record<string, unknown> = {
       tag_name: params.tagName,
       name: params.name || params.tagName,
       // Gitee 把 body 标为必填，空字符串是安全的兜底值。
       body: params.body ?? '',
+      // 同样是必填，缺省时补上默认分支（见 defaultBranch 的说明）。
+      target_commitish: params.targetCommitish || (await this.defaultBranch(params)),
     };
     if (params.prerelease !== undefined) {
       body.prerelease = params.prerelease;
-    }
-    if (params.targetCommitish) {
-      body.target_commitish = params.targetCommitish;
     }
     return body;
   }

@@ -261,6 +261,8 @@ describe('并发冲突兜底', () => {
       }
       if (req.method === 'PATCH') return jsonResponse(RAW_RELEASE);
       if (path.includes('/attach_files')) return jsonResponse([]);
+      // 创建前会先查一次默认分支，用来补 target_commitish
+      if (path === '/api/v5/repos/acme/widget') return jsonResponse({ default_branch: 'main' });
       // 冲突之前查不到，冲突之后回查才拿到——模拟并发 workflow 抢先建好了 release
       return createAttempted
         ? jsonResponse(RAW_RELEASE)

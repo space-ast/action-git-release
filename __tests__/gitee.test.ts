@@ -123,8 +123,15 @@ describe('GiteeReleaser.createRelease', () => {
     expect(body.target_commitish).toBe('main');
   });
 
-  it('不传 target_commitish 时交由 Gitee 使用默认分支', async () => {
-    const requests = installFetch(() => jsonResponse(RAW_RELEASE));
+  // Gitee 文档把 target_commitish 描述成「默认是当前默认分支」，但实测是必填的：
+  // 漏传会返回 400 target_commitish is missing。这条用例锁住这个反直觉的行为。
+  it('未指定 target_commitish 时自动补上仓库默认分支', async () => {
+    const requests = installFetch((req) =>
+      pathOf(req.url) === '/api/v5/repos/acme/widget'
+        ? jsonResponse({ default_branch: 'develop' })
+        : jsonResponse(RAW_RELEASE),
+    );
+
     await makeReleaser().createRelease({
       ...REF,
       tagName: 'v1.0.0',
@@ -135,7 +142,54 @@ describe('GiteeReleaser.createRelease', () => {
       targetCommitish: undefined,
       makeLatest: undefined,
     });
-    expect(jsonBodyOf(requests[0])).not.toHaveProperty('target_commitish');
+
+    const post = requests.find((r) => r.method === 'POST')!;
+    expect(jsonBodyOf(post).target_commitish).toBe('develop');
+  });
+
+  it('默认分支只查询一次，后续创建复用缓存', async () => {
+    const requests = installFetch((req) =>
+      pathOf(req.url) === '/api/v5/repos/acme/widget'
+        ? jsonResponse({ default_branch: 'develop' })
+        : jsonResponse(RAW_RELEASE),
+    );
+
+    const releaser = makeReleaser();
+    const mutation = {
+      ...REF,
+      tagName: 'v1.0.0',
+      name: 'v1.0.0',
+      body: 'notes',
+      draft: undefined,
+      prerelease: undefined,
+      targetCommitish: undefined,
+      makeLatest: undefined,
+    };
+    await releaser.createRelease(mutation);
+    await releaser.createRelease(mutation);
+
+    expect(requests.filter((r) => r.method === 'GET').length).toBe(1);
+  });
+
+  it('取不到 default_branch 时兜底为 master', async () => {
+    const requests = installFetch((req) =>
+      pathOf(req.url) === '/api/v5/repos/acme/widget'
+        ? jsonResponse({})
+        : jsonResponse(RAW_RELEASE),
+    );
+
+    await makeReleaser().createRelease({
+      ...REF,
+      tagName: 'v1.0.0',
+      name: 'v1.0.0',
+      body: 'notes',
+      draft: undefined,
+      prerelease: undefined,
+      targetCommitish: undefined,
+      makeLatest: undefined,
+    });
+
+    expect(jsonBodyOf(requests.find((r) => r.method === 'POST')!).target_commitish).toBe('master');
   });
 });
 

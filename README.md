@@ -185,6 +185,9 @@ GitHub 专用的输入，直接失败会让迁移寸步难行。
   那两个平台上的 release 一旦创建就对外可见，假装有草稿只会让人误判。
 - **Gitee 的 `make_latest`、`generate_release_notes`、`discussion_category_name` 均不可用**，
   只告警不生效。需要 release notes 请用 `body_path` 自己生成。
+- **Gitee 创建 release 时 `target_commitish` 实际是必填的**，尽管其 API 文档把它描述成
+  「默认是当前默认分支」——漏传会直接返回 400 `target_commitish is missing`（实测确认）。
+  未显式指定时，本 action 会先查一次仓库默认分支补上，结果按仓库缓存。
 - **GitCode 没有删除 release 的公开接口**，只有删除单个附件。因此 `deleteRelease`
   会明确报错而不是静默失败。
 - **GitCode 的 release 对象文档里没有顶层 `id`**（尽管部分英文文档又暗示有）。
