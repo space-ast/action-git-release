@@ -19,7 +19,7 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/action-git-release.git"
+    "url": "git+https://github.com/space-ast/action-git-release.git"
   },
   "keywords": [
     "actions",

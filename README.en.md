@@ -9,7 +9,7 @@ almost no changes — swap the `uses:` line and point it at a platform:
 
 ```diff
 - uses: softprops/action-gh-release@v3
-+ uses: your-org/action-git-release@v1
++ uses: space-ast/action-git-release@v1
   with:
     files: dist/*.zip
 +   platform: gitee
@@ -49,7 +49,7 @@ jobs:
           mkdir -p dist
           echo "artifact" > dist/app.zip
 
-      - uses: your-org/action-git-release@v1
+      - uses: space-ast/action-git-release@v1
         with:
           platform: gitee            # or gitcode / github / auto
           token: ${{ secrets.GITEE_TOKEN }}

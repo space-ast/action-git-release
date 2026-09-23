@@ -4,7 +4,11 @@
 # 需要的 secrets：
 #   E2E_GITEE_TOKEN    —— Gitee 私人令牌（需要 projects 权限）
 #   E2E_GITCODE_TOKEN  —— GitCode 访问令牌
-#   E2E_REPOSITORY     —— <owner>/<repo>，两个平台上路径一致的测试仓库
+#   E2E_REPOSITORY     —— <owner>/<repo> 测试仓库
+#
+# 测试仓库的路径可以按平台分别指定（两个平台的用户名往往不一致）：
+#   E2E_GITEE_REPOSITORY / E2E_GITCODE_REPOSITORY
+# 未配置时会退回到 E2E_REPOSITORY。两个平台路径相同时只配后者即可。
 #
 # 运行两次可以得到完整的覆盖：
 #   第一次 —— 走「创建 release + 上传附件」分支
@@ -41,6 +45,23 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # 把「用哪个测试仓库」提前解析出来。Gitee 与 GitCode 的用户名经常不一样，
+      # 所以允许按平台分别配置，都缺省时才退回共用值。
+      - name: 解析测试仓库
+        id: target
+        env:
+          GITEE_REPO: ${{ secrets.E2E_GITEE_REPOSITORY || secrets.E2E_REPOSITORY }}
+          GITCODE_REPO: ${{ secrets.E2E_GITCODE_REPOSITORY || secrets.E2E_REPOSITORY }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          if [ "$PLATFORM" = "gitee" ]; then repo="$GITEE_REPO"; else repo="$GITCODE_REPO"; fi
+          if [ -z "$repo" ]; then
+            echo "::error::未配置测试仓库 secret。请设置 E2E_${PLATFORM^^}_REPOSITORY 或 E2E_REPOSITORY。"
+            exit 1
+          fi
+          echo "使用测试仓库 $repo"
+          echo "repository=$repo" >> "$GITHUB_OUTPUT"
+
       - name: 准备测试构件
         run: |
           mkdir -p e2e-assets
@@ -54,7 +75,7 @@ jobs:
         uses: ./
         with:
           platform: ${{ inputs.platform }}
-          repository: ${{ secrets.E2E_REPOSITORY }}
+          repository: ${{ steps.target.outputs.repository }}
           token: ${{ inputs.platform == 'gitee' && secrets.E2E_GITEE_TOKEN || secrets.E2E_GITCODE_TOKEN }}
           tag_name: ${{ inputs.tag }}
           name: E2E ${{ inputs.tag }}
@@ -88,7 +109,7 @@ jobs:
         uses: ./
         with:
           platform: ${{ inputs.platform }}
-          repository: ${{ secrets.E2E_REPOSITORY }}
+          repository: ${{ steps.target.outputs.repository }}
           token: ${{ inputs.platform == 'gitee' && secrets.E2E_GITEE_TOKEN || secrets.E2E_GITCODE_TOKEN }}
           tag_name: ${{ inputs.tag }}
           name: E2E ${{ inputs.tag }}
@@ -121,7 +142,7 @@ jobs:
         uses: ./
         with:
           platform: ${{ inputs.platform }}
-          repository: ${{ secrets.E2E_REPOSITORY }}
+          repository: ${{ steps.target.outputs.repository }}
           token: ${{ inputs.platform == 'gitee' && secrets.E2E_GITEE_TOKEN || secrets.E2E_GITCODE_TOKEN }}
           tag_name: ${{ inputs.tag }}-draft
           draft: 'true'

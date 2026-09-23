@@ -7,7 +7,7 @@
 
 ```diff
 - uses: softprops/action-gh-release@v3
-+ uses: your-org/action-git-release@v1
++ uses: space-ast/action-git-release@v1
   with:
     files: dist/*.zip
 +   platform: gitee
@@ -51,7 +51,7 @@ jobs:
           echo "artifact" > dist/app.zip
 
       - name: 发布到 Gitee
-        uses: your-org/action-git-release@v1
+        uses: space-ast/action-git-release@v1
         with:
           platform: gitee
           token: ${{ secrets.GITEE_TOKEN }}
@@ -63,7 +63,7 @@ jobs:
 
 ```yaml
       - name: 发布到 GitCode
-        uses: your-org/action-git-release@v1
+        uses: space-ast/action-git-release@v1
         with:
           platform: gitcode
           token: ${{ secrets.GITCODE_TOKEN }}
@@ -87,7 +87,7 @@ jobs:
             token: GITCODE_TOKEN
     steps:
       - uses: actions/checkout@v4
-      - uses: your-org/action-git-release@v1
+      - uses: space-ast/action-git-release@v1
         with:
           platform: ${{ matrix.platform }}
           token: ${{ secrets[matrix.token] }}
@@ -97,7 +97,7 @@ jobs:
 ### 省略 platform，靠环境变量自动推断
 
 ```yaml
-      - uses: your-org/action-git-release@v1
+      - uses: space-ast/action-git-release@v1
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         with:
