@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises';
 import { basename } from 'path';
-import { request, requestJson, withQuery } from './http';
+import { request, requestJson, UPLOAD_MAX_ATTEMPTS, UPLOAD_TIMEOUT_MS, withQuery } from './http';
 import { isNotFound, PlatformError } from './errors';
 import { sleep } from '../util';
 import type {
@@ -283,6 +283,9 @@ export class GitCodeReleaser implements Releaser {
         url,
         platform: this.platform,
         headers,
+        // 对象存储直传同样是跨境的慢链路，用与 attach_files 相同的宽限。
+        timeoutMs: UPLOAD_TIMEOUT_MS,
+        maxAttempts: UPLOAD_MAX_ATTEMPTS,
         body: () => blob,
       });
       return;
@@ -301,6 +304,8 @@ export class GitCodeReleaser implements Releaser {
       url,
       platform: this.platform,
       headers,
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+      maxAttempts: UPLOAD_MAX_ATTEMPTS,
       body: () => {
         const form = new FormData();
         form.append('file', blob, name);

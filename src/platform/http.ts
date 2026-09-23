@@ -1,3 +1,4 @@
+import { Agent, setGlobalDispatcher } from 'undici';
 import { sleep } from '../util';
 import { PlatformError, redactUrl } from './errors';
 import type { PlatformName } from './types';
@@ -6,6 +7,38 @@ import type { PlatformName } from './types';
 const DEFAULT_MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
+
+/** 普通 API 调用的单次尝试上限：只收发小体积 JSON，60 秒足够。 */
+const DEFAULT_TIMEOUT_MS = 60_000;
+
+/**
+ * 上传附件的单次尝试上限。这个值必须按最坏情况倒推：
+ * 从 GitHub runner 跨境传到 Gitee/GitCode 实测只有 20–90 KB/s，100MB 的附件理论上要跑一小时。
+ * 放宽到 30 分钟能覆盖本项目 ~35MB 的产物（含两倍余量），再大就该考虑分卷了。
+ */
+export const UPLOAD_TIMEOUT_MS = 30 * 60_000;
+
+/** 上传的重试次数。单次就要 30 分钟，次数再多只会让失败的 job 白等。 */
+export const UPLOAD_MAX_ATTEMPTS = 2;
+
+/**
+ * Node 内置的 fetch 是 undici 实现的，它带两条默认 300 秒的计时器：`headersTimeout`（等响应头）
+ * 与 `bodyTimeout`（等响应体分块）。实测这条计时**从请求发出就开始跑，不等 body 发完**，
+ * 所以跨境上传几十 MB 的产物必定撞线被掐断——34MB 的包连传三次、每次都在 301 秒整失败。
+ *
+ * 改它们只能走全局 dispatcher：per-request 的 `dispatcher` 传 Node 内置 fetch 会抛
+ * `UND_ERR_INVALID_ARG`（npm 版 undici 与内置版不是同一份实现）。这里把上限放宽到比任何
+ * 单次请求都大，真正的超时控制交给每个请求自己的 `AbortSignal.timeout`，报错也更清楚。
+ */
+setGlobalDispatcher(
+  new Agent({
+    headersTimeout: UPLOAD_TIMEOUT_MS + 60_000,
+    bodyTimeout: UPLOAD_TIMEOUT_MS + 60_000,
+    connectTimeout: 30_000,
+    // 默认 4 秒的 keep-alive 会让进程多挂 4 秒才退出，action 里没必要。
+    keepAliveTimeout: 1000,
+  }),
+);
 
 /**
  * FormData 和 Blob 这类 body 会被 `fetch` 消费掉，重试时必须重新构造。
@@ -23,6 +56,8 @@ export interface HttpRequest {
   allowStatuses?: number[];
   /** 设为 1 可关闭重试，用于重复执行可能造成副作用的调用。 */
   maxAttempts?: number;
+  /** 单次尝试的墙钟上限，默认 60 秒；上传附件要显式放宽。 */
+  timeoutMs?: number;
 }
 
 export interface HttpResponse {
@@ -32,6 +67,12 @@ export interface HttpResponse {
 }
 
 const isRetryableStatus = (status: number): boolean => status === 429 || status >= 500;
+
+/** `AbortSignal.timeout` 抛出的错误只有光秃秃一个 `TimeoutError`，补上「等了多久」才好排查。 */
+const describeFetchError = (error: unknown, timeoutMs: number): string =>
+  error instanceof Error && error.name === 'TimeoutError'
+    ? `timed out after ${Math.round(timeoutMs / 1000)}s`
+    : String(error);
 
 /** 解析 `Retry-After`，它可能是秒数，也可能是 HTTP 日期格式。 */
 const retryAfterMs = (headers: Headers): number | undefined => {
@@ -70,6 +111,7 @@ const truncate = (text: string, limit = 2000): string =>
  */
 export async function request(req: HttpRequest): Promise<HttpResponse> {
   const maxAttempts = Math.max(1, req.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+  const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const label = `${req.platform} API ${req.method} ${redactUrl(req.url)}`;
   let lastError: unknown;
 
@@ -80,19 +122,21 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
         method: req.method,
         headers: req.headers,
         body: await resolveBody(req.body),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error: unknown) {
       lastError = error;
+      const reason = describeFetchError(error, timeoutMs);
       if (attempt === maxAttempts) {
         throw new PlatformError({
           platform: req.platform,
           method: req.method,
           url: req.url,
-          message: `${label} failed after ${attempt} attempt(s): ${String(error)}`,
+          message: `${label} failed after ${attempt} attempt(s): ${reason}`,
           cause: error,
         });
       }
-      console.warn(`⚠️ ${label} failed (${String(error)}), retrying…`);
+      console.warn(`⚠️ ${label} failed (${reason}), retrying…`);
       await sleep(backoffMs(attempt));
       continue;
     }

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### 修复
+
+- **大附件跨境上传必定失败。** Node 内置 fetch（undici）的 `headersTimeout` 默认 300 秒，
+  且实测这条计时**从请求发出就开始跑、不等 body 发完**，因此 34MB 的产物会稳定在 301 秒
+  被掐断（Gitee 上实测只有 20–90 KB/s）。现在通过全局 dispatcher 把它放宽到 31 分钟，
+  并由每个请求自己的 `AbortSignal` 做真正的超时控制：普通 API 调用 60 秒，
+  上传附件 30 分钟、最多 2 次尝试。超时后报错会写明等了多久，而不是只抛一个 `TimeoutError`。
+
+### 变更
+
+- 新增 `undici` 依赖（dist 686KB → 1.2MB），`engines.node` 相应提升到 `>=22.19.0`。
+
 ## 0.1.0
 
 首个版本。运行时是 GitHub Actions，发布目标是 Gitee / GitCode / GitHub。

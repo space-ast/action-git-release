@@ -1,7 +1,7 @@
 import { readFile } from 'fs/promises';
 import { statSync } from 'fs';
 import { basename } from 'path';
-import { request, requestJson, withQuery } from './http';
+import { request, requestJson, UPLOAD_MAX_ATTEMPTS, UPLOAD_TIMEOUT_MS, withQuery } from './http';
 import { isNotFound } from './errors';
 import type {
   Asset,
@@ -255,6 +255,9 @@ export class GiteeReleaser implements Releaser {
         `${this.repoPath({ owner, repo })}/releases/${encodeURIComponent(release.id)}/attach_files`,
       ),
       platform: this.platform,
+      // 附件要跨境上传，60 秒的默认上限连 3MB 都不够。
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+      maxAttempts: UPLOAD_MAX_ATTEMPTS,
       // 不要手动设置 Content-Type，fetch 需要自己写入 multipart 的 boundary。
       body: () => {
         const form = new FormData();
