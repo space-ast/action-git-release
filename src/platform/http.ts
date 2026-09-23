@@ -175,7 +175,13 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
     } catch (error: unknown) {
       lastError = error;
       const reason = describeFetchError(error, timeoutMs, Date.now() - startedAt);
-      if (attempt === maxAttempts) {
+      // 每一次失败都先留一行普通警告再走：CI 里的 error 注解常被截断，这行才是能搜到的完整原因。
+      // 但只有真会重试时才说 retrying，否则最后一条日志会骗人。
+      const retrying = attempt < maxAttempts;
+      console.warn(
+        `⚠️ ${label} failed (${reason})${retrying ? `, retrying… (${attempt}/${maxAttempts})` : ''}`,
+      );
+      if (!retrying) {
         throw new PlatformError({
           platform: req.platform,
           method: req.method,
@@ -184,7 +190,6 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
           cause: error,
         });
       }
-      console.warn(`⚠️ ${label} failed (${reason}), retrying… (${attempt}/${maxAttempts})`);
       await sleep(backoffMs(attempt));
       continue;
     }
