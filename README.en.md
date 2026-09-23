@@ -185,9 +185,13 @@ npm run smoke:gitee     # anonymous access works
 npm run smoke:gitcode   # needs GITCODE_TOKEN (anonymous returns 403)
 ```
 
-E2E requires `E2E_GITEE_TOKEN`, `E2E_GITCODE_TOKEN` and `E2E_REPOSITORY` secrets.
-Run it **twice**: the first run exercises the create path, the second the update
-and overwrite path.
+E2E requires `E2E_GITEE_TOKEN` and `E2E_GITCODE_TOKEN`, plus a scratch repository via
+`E2E_GITEE_REPOSITORY` / `E2E_GITCODE_REPOSITORY` (or a single `E2E_REPOSITORY` when the
+path is the same on both platforms).
+
+A single run covers all three paths — create, update with overwrite, and draft
+degradation — so there is no need to trigger it repeatedly. The scratch repository must
+already exist and contain at least one commit; E2E really creates tags and releases in it.
 
 ## License
 

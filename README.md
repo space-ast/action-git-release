@@ -240,8 +240,11 @@ npm run smoke:gitee     # 匿名即可跑
 npm run smoke:gitcode   # 需要 GITCODE_TOKEN（GitCode 匿名访问返回 403）
 ```
 
-E2E 需要配置 secrets：`E2E_GITEE_TOKEN`、`E2E_GITCODE_TOKEN`、`E2E_REPOSITORY`。
-**跑两次**才能覆盖完整路径：第一次走创建分支，第二次走更新 + 覆盖写分支。
+E2E 需要配置 secrets：`E2E_GITEE_TOKEN`、`E2E_GITCODE_TOKEN`，以及测试仓库
+`E2E_GITEE_REPOSITORY` / `E2E_GITCODE_REPOSITORY`（两个平台路径相同时只配 `E2E_REPOSITORY` 即可）。
+
+一次运行就会依次走完创建、更新 + 覆盖写、draft 降级三条路径，不需要重复触发。
+测试仓库必须是**已有的、至少含一个提交**的仓库，且建议专用——E2E 会在里面真实打 tag、建 release。
 
 ## 许可证
 
