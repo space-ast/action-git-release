@@ -68,11 +68,58 @@ export interface HttpResponse {
 
 const isRetryableStatus = (status: number): boolean => status === 429 || status >= 500;
 
-/** `AbortSignal.timeout` 抛出的错误只有光秃秃一个 `TimeoutError`，补上「等了多久」才好排查。 */
-const describeFetchError = (error: unknown, timeoutMs: number): string =>
-  error instanceof Error && error.name === 'TimeoutError'
-    ? `timed out after ${Math.round(timeoutMs / 1000)}s`
-    : String(error);
+/** 把 errno 这类字段一并格式化出来——`code` 是区分「该重试」和「该换路子」的关键。 */
+const formatError = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  const detail = error as NodeJS.ErrnoException & {
+    syscall?: string;
+    address?: string;
+    port?: number;
+  };
+  const fields = [
+    detail.code && `code=${detail.code}`,
+    detail.errno !== undefined && `errno=${detail.errno}`,
+    detail.syscall && `syscall=${detail.syscall}`,
+    detail.address && `address=${detail.address}`,
+    detail.port !== undefined && `port=${detail.port}`,
+  ].filter((field): field is string => Boolean(field));
+  return `${error.name}: ${error.message}${fields.length ? ` [${fields.join(' ')}]` : ''}`;
+};
+
+/**
+ * 展开 `cause` 链。
+ *
+ * `fetch` 失败时只会甩一句 `TypeError: fetch failed`，真正的原因（ECONNRESET、对端关闭、
+ * TLS 握手失败、连接超时……）全藏在 `cause` 里。只打最外层的话，CI 日志里就剩一句没法
+ * 排查的空话——跨境上传连续失败时，我们正是被这一点卡住的。
+ */
+const describeErrorChain = (error: unknown): string => {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== undefined && current !== null && !seen.has(current) && parts.length < 5) {
+    seen.add(current);
+    parts.push(formatError(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return parts.join(' ← ');
+};
+
+/**
+ * 单次尝试失败时的说明。
+ *
+ * 超时按约定写成「等了多久」，因为它是最常被当成根因误判的一类；其余异常一律展开原因链，
+ * 并补上这次尝试实际耗掉的墙钟时间——上传失败时，耗时能区分「刚建立连接就挂」
+ * 和「传完几十 MB 才挂」这两种完全不同的故障。
+ */
+const describeFetchError = (error: unknown, timeoutMs: number, elapsedMs: number): string => {
+  if (error instanceof Error && error.name === 'TimeoutError') {
+    return `timed out after ${Math.round(timeoutMs / 1000)}s`;
+  }
+  return `${describeErrorChain(error)} (waited ${(elapsedMs / 1000).toFixed(1)}s)`;
+};
 
 /** 解析 `Retry-After`，它可能是秒数，也可能是 HTTP 日期格式。 */
 const retryAfterMs = (headers: Headers): number | undefined => {
@@ -116,6 +163,7 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const startedAt = Date.now();
     let response: Response;
     try {
       response = await fetch(req.url, {
@@ -126,7 +174,7 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
       });
     } catch (error: unknown) {
       lastError = error;
-      const reason = describeFetchError(error, timeoutMs);
+      const reason = describeFetchError(error, timeoutMs, Date.now() - startedAt);
       if (attempt === maxAttempts) {
         throw new PlatformError({
           platform: req.platform,
@@ -136,7 +184,7 @@ export async function request(req: HttpRequest): Promise<HttpResponse> {
           cause: error,
         });
       }
-      console.warn(`⚠️ ${label} failed (${reason}), retrying…`);
+      console.warn(`⚠️ ${label} failed (${reason}), retrying… (${attempt}/${maxAttempts})`);
       await sleep(backoffMs(attempt));
       continue;
     }
