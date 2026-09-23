@@ -14,12 +14,18 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 /**
  * 上传附件的单次尝试上限。这个值必须按最坏情况倒推：
  * 从 GitHub runner 跨境传到 Gitee/GitCode 实测只有 20–90 KB/s，100MB 的附件理论上要跑一小时。
- * 放宽到 30 分钟能覆盖本项目 ~35MB 的产物（含两倍余量），再大就该考虑分卷了。
+ * 放宽到 60 分钟能覆盖本项目 ~35MB 的产物，再大就该考虑分卷了。
  */
-export const UPLOAD_TIMEOUT_MS = 30 * 60_000;
+export const UPLOAD_TIMEOUT_MS = 60 * 60_000;
 
-/** 上传的重试次数。单次就要 30 分钟，次数再多只会让失败的 job 白等。 */
-export const UPLOAD_MAX_ATTEMPTS = 2;
+/**
+ * 上传的重试次数。
+ *
+ * 单次上限已经有 60 分钟，所以次数不能随便加：5 次意味着最坏情况要在**一个**附件上等满
+ * 5 小时，而 ast 的矩阵 job 没设 `timeout-minutes`（吃默认的 6 小时），余量已经不多。
+ * 再往上加之前，先把 job 层面的超时算进去。
+ */
+export const UPLOAD_MAX_ATTEMPTS = 5;
 
 /**
  * Node 内置的 fetch 是 undici 实现的，它带两条默认 300 秒的计时器：`headersTimeout`（等响应头）

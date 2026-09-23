@@ -32,7 +32,7 @@ describe('请求超时', () => {
     ).rejects.toThrow(/timed out after 60s/);
   });
 
-  it('上传可以放宽到 30 分钟，报错里写明等了多久', async () => {
+  it('上传会放宽到 UPLOAD_TIMEOUT_MS，报错里写明等了多久', async () => {
     installFetch(() => {
       throw timeoutError();
     });
@@ -45,7 +45,8 @@ describe('请求超时', () => {
         timeoutMs: UPLOAD_TIMEOUT_MS,
         maxAttempts: 1,
       }),
-    ).rejects.toThrow(/timed out after 1800s/);
+      // 断言跟着常量走：这个值按跨境实测反复调过（1800s → 3600s），写死就天天过期。
+    ).rejects.toThrow(`timed out after ${UPLOAD_TIMEOUT_MS / 1000}s`);
   });
 
   it('网络异常按原样带上，耗尽重试后如实抛错', async () => {
