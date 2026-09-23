@@ -3,7 +3,6 @@ import { env } from 'process';
 import { basename } from 'path';
 import { parseConfig, type Config } from './config';
 import { createReleaser } from './platform';
-import { PlatformError } from './platform/errors';
 import type { Asset, Release, Releaser, RepositoryRef } from './platform/types';
 import { assetMatchesName, errorMessage, paths, releaseBody, unmatchedPatterns } from './util';
 
@@ -115,16 +114,26 @@ const release = async (
   try {
     return { release: await createNew(config, releaser, target, tag), created: true };
   } catch (error: unknown) {
-    if (!isAlreadyExists(error)) {
-      throw error;
-    }
-    console.warn(
-      `⚠️ A release for tag ${tag} already exists (likely a concurrent workflow). Updating it instead.`,
-    );
-    const raced = await releaser.getReleaseByTag({ ...target, tag });
+    // 矩阵构建下多个 job 会并发创建同一个 release，各平台给出的错误码并不统一
+    // （GitHub 是 422 already_exists，Gitee/GitCode 未公开）。这里不猜错误码，
+    // 而是直接回查一次：能查到就说明别人抢先建好了，改走更新即可；查不到说明是真失败。
+    const raced = await releaser
+      .getReleaseByTag({ ...target, tag })
+      .catch((lookupError: unknown) => {
+        console.warn(
+          `⚠️ Could not check whether release ${tag} exists after a failed create: ${errorMessage(lookupError)}`,
+        );
+        return undefined;
+      });
+
     if (!raced) {
       throw error;
     }
+
+    console.warn(
+      `⚠️ Creating release ${tag} failed (${errorMessage(error)}), but it already exists — ` +
+        'most likely a concurrent matrix job created it. Updating it instead.',
+    );
     return { release: await updateExisting(config, releaser, target, raced), created: false };
   }
 };
@@ -370,15 +379,4 @@ const report = (rel: Release): void => {
   setOutput('id', rel.id);
   setOutput('upload_url', rel.uploadUrl);
   console.log(`🎉 Release ready at ${rel.htmlUrl}`);
-};
-
-/** 判断创建失败是否因为 release 已存在，用于并发场景的降级处理。 */
-const isAlreadyExists = (error: unknown): boolean => {
-  if (!(error instanceof PlatformError)) {
-    return false;
-  }
-  if (error.status === 409 || error.status === 422) {
-    return true;
-  }
-  return /already exist|already exists|已存在|duplicate/i.test(error.responseBody ?? '');
 };

@@ -282,4 +282,64 @@ describe('并发冲突兜底', () => {
     expect(warns.some((w) => /already exists/.test(w))).toBe(true);
     expect(requests.some((r) => r.method === 'PATCH')).toBe(true);
   });
+
+  // 这条是关键：Gitee/GitCode 的「release 已存在」既不返回 422，也没有统一的错误码，
+  // 所以回退判断不能依赖错误码，只要回查能查到就得改走更新。
+  it.each([
+    ['Gitee 风格的 400', 400, '{"messages":["该标签已存在发行版"]}'],
+    ['GitCode 风格的 409', 409, '{"error_message":"release exists"}'],
+    ['完全无法识别的错误体', 500, '<html>Bad Gateway</html>'],
+  ])('创建失败但 release 已存在时回退到更新（%s）', async (_label, status, payload) => {
+    let createAttempted = false;
+    const warns: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((msg: string) => void warns.push(String(msg)));
+
+    const requests = installFetch((req) => {
+      const path = pathOf(req.url);
+      if (req.method === 'POST' && path.endsWith('/releases')) {
+        createAttempted = true;
+        return textResponse(String(payload), Number(status));
+      }
+      if (req.method === 'PATCH') return jsonResponse(RAW_RELEASE);
+      if (path.includes('/attach_files')) return jsonResponse([]);
+      if (path === '/api/v5/repos/acme/widget') return jsonResponse({ default_branch: 'main' });
+      return createAttempted
+        ? jsonResponse(RAW_RELEASE)
+        : jsonResponse({ message: 'Not Found' }, 404);
+    });
+
+    setEnv({
+      INPUT_PLATFORM: 'gitee',
+      INPUT_TOKEN: 't',
+      INPUT_REPOSITORY: 'acme/widget',
+      INPUT_TAG_NAME: 'v1.0.0',
+    });
+
+    await run();
+
+    expect(setFailed).not.toHaveBeenCalled();
+    expect(requests.some((r) => r.method === 'PATCH')).toBe(true);
+  });
+
+  it('创建失败且回查确实没有 release 时，如实失败而不是吞掉错误', async () => {
+    installFetch((req) => {
+      const path = pathOf(req.url);
+      if (req.method === 'POST' && path.endsWith('/releases')) {
+        return textResponse('{"message":"权限不足"}', 403);
+      }
+      if (path === '/api/v5/repos/acme/widget') return jsonResponse({ default_branch: 'main' });
+      return jsonResponse({ message: 'Not Found' }, 404);
+    });
+
+    setEnv({
+      INPUT_PLATFORM: 'gitee',
+      INPUT_TOKEN: 't',
+      INPUT_REPOSITORY: 'acme/widget',
+      INPUT_TAG_NAME: 'v1.0.0',
+    });
+
+    await run();
+
+    expect(setFailed).toHaveBeenCalledWith(expect.stringMatching(/403/));
+  });
 });
