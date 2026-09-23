@@ -1,7 +1,7 @@
 # https://help.github.com/en/articles/metadata-syntax-for-github-actions
 # 输入输出与 softprops/action-gh-release 保持同名同义，只额外增加 platform / api_url 两项，
 # 使既有的 workflow 几乎不用改动就能把发布目标切到 Gitee 或 GitCode。
-name: "Git Release"
+name: "Multi-Platform Release"
 description: "在 GitHub Actions 上把 release 发布到 Gitee、GitCode 或 GitHub"
 author: "action-git-release"
 inputs:
