@@ -11,6 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # workflow 文件本身非法时，GitHub 会直接判定运行失败且不产生任何日志
+      # （表现为耗时 0 秒），排查起来非常费劲。这里先静态校验一遍。
+      # 典型错误：在 step 的 if: 里使用 secrets 上下文。
+      - name: 校验 workflow 语法
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -56,8 +64,13 @@ jobs:
         run: npm run smoke:gitee
 
       - name: GitCode 只读冒烟
-        # GitCode 匿名访问返回 403，没有配 secret 时跳过而不是失败
-        if: ${{ secrets.GITCODE_TOKEN != '' }}
+        # GitCode 匿名访问返回 403，未配置 secret 时跳过而不是失败。
+        # 注意：secrets 上下文在 step 的 if: 里不可用，只能在 env 里判断。
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
-        run: npm run smoke:gitcode
+        run: |
+          if [ -z "$GITCODE_TOKEN" ]; then
+            echo "未配置 GITCODE_TOKEN，跳过 GitCode 冒烟测试"
+            exit 0
+          fi
+          npm run smoke:gitcode

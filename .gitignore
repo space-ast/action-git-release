@@ -9,3 +9,7 @@ lib
 
 # 编辑器/工具的个人配置，不应共享
 .claude/settings.local.json
+
+# 本地下载的 workflow 校验工具
+actionlint
+actionlint.exe
