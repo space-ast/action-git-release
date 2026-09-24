@@ -81,6 +81,12 @@ actionable error rather than guessing.
 > `${{ github.token }}` would always populate `INPUT_TOKEN`, which would make the
 > environment-variable fallbacks dead code.
 
+## A real-world example
+
+[space-ast/ast](https://github.com/space-ast/ast) uses this action to upload artifacts built on GitHub to Gitee and GitCode
+
+See [build.yml@v0.3.1](https://github.com/space-ast/ast/blob/v0.3.1/.github/workflows/build.yml#L177) for the full pipeline
+
 ## Inputs
 
 All softprops inputs behave identically: `body`, `body_path`, `name`, `tag_name`,

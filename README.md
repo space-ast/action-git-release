@@ -104,6 +104,12 @@ jobs:
           files: dist/*.zip
 ```
 
+## 实战示例
+
+[space-ast/ast](https://github.com/space-ast/ast) 用这个 action 把 GitHub 上构建的产物上传到 Gitee 和 GitCode
+
+完整流水线配置见[build.yml@v0.3.1](https://github.com/space-ast/ast/blob/v0.3.1/.github/workflows/build.yml#L177)
+
 ## 平台是怎么推断出来的
 
 `platform` 默认为 `auto`，按以下顺序判定：
